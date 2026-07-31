@@ -67,13 +67,29 @@ curl -sS -X POST localhost:8899/pay -H 'content-type: application/json' \
 `/pay` returns a **payment plan** (x402 leg + Prava leg params + policy decision) and
 moves no money on its own. Executing the two legs are separate authorized steps.
 
+## Environments — sandbox vs production (IMPORTANT)
+
+Prava test cards work **only in sandbox**, which is separate infrastructure from the
+`pay.prava.space` production dashboard (adding the test card there fails with "card
+network could not process"). Sandbox:
+
+- Console / signup: **dashboard.prava.space** (self-serve, no KYC) → issues `pk_test_*` / `sk_test_*`
+- API base: **`https://sandbox.api.prava.space`** · card collection: **`sandbox.collect.prava.space`**
+- The test card is entered via the **secure collect iframe during a payment session**
+  (created with `sk_test_*`), not by a standalone "Add a card": create session → open
+  `iframe_url` → enter test card `4622 9431 2313 7789` CVV `757` exp `12/27` → passkey →
+  poll result → report `APPROVED`/`DECLINED`.
+
 ## Owner-actions to light up a REAL demo transaction (before the 7PM PT build start)
 
-1. **Add a Prava sandbox card** in the Pay dashboard (dashboard currently shows 0 cards):
-   Visa `4622 9431 2313 7789`, CVV `757`, exp `12/27`, bank-OTP `456789`.
-2. **Create a standing mandate** (cap e.g. $5, merchant `x402-prava-bridge`) — one passkey.
-3. **Fund a float wallet** on Base mainnet with ~$1–5 USDC and set `FLOAT_PRIVATE_KEY`
+1. **Sign up at dashboard.prava.space** (sandbox, self-serve) and generate **test keys**.
+   Put the SECRET in the bridge env — do NOT paste it in chat: `PRAVA_SK_TEST=sk_test_…`
+   (and `PRAVA_PK_TEST=pk_test_…`). `.env` is gitignored.
+   *(Alt route for a genuinely-real card-leg: add a REAL card with a $5 cap in
+   pay.prava.space and use the connected Prava MCP — real money, strongest for judging.)*
+2. **Fund a float wallet** on Base mainnet with ~$1–5 USDC and set `FLOAT_PRIVATE_KEY`
    (used only by the x402 settle step; keep it out of git).
-4. **Devfolio:** add the project to the accepted entry; note the Prava MCP connection.
+3. **Devfolio:** add the project to the accepted entry; note the Prava MCP connection.
 
-Env: `BRIDGE_AUTO_THRESHOLD_USDC` (default 0.01), `BRIDGE_FEE_USDC` (default 0), `PORT`.
+Env: `PRAVA_SK_TEST`, `PRAVA_PK_TEST`, `FLOAT_PRIVATE_KEY`, `BRIDGE_AUTO_THRESHOLD_USDC`
+(default 0.01), `BRIDGE_FEE_USDC` (default 0), `PORT`.

@@ -13,6 +13,7 @@
 import express from "express";
 import { probeX402 } from "./x402.mjs";
 import { decidePolicy, auditEntry, DEFAULT_THRESHOLD_USD, BRIDGE_FEE_USD } from "./policy.mjs";
+import { settleX402, floatAddress } from "./settle.mjs";
 
 const app = express();
 app.use(express.json());
@@ -21,13 +22,34 @@ const AUDIT = [];
 const log = (e) => { AUDIT.push(e); console.log("audit", JSON.stringify(e)); };
 
 app.get("/health", (_req, res) => {
+  let float = null;
+  try { float = floatAddress(); } catch { /* no float key configured */ }
   res.json({
     ok: true,
     service: "x402-prava-bridge",
     threshold_usd: DEFAULT_THRESHOLD_USD,
     bridge_fee_usd: BRIDGE_FEE_USD,
+    float_wallet: float,
     bridged_calls: AUDIT.length,
   });
+});
+
+// x402 USDC leg. SPENDS from the float wallet — call ONLY after the Prava card
+// leg is approved. Point it at a Base Sepolia Predge endpoint for a no-real-money
+// demo; a mainnet target spends real USDC ($0.005+).
+app.post("/settle", async (req, res) => {
+  const targetUrl = req.body?.targetUrl;
+  if (!targetUrl || !/^https?:\/\//.test(targetUrl)) {
+    return res.status(400).json({ error: "targetUrl (http/https) required" });
+  }
+  try {
+    const out = await settleX402(targetUrl);
+    const last = AUDIT[AUDIT.length - 1];
+    if (last && last.url === targetUrl) last.outcome = out.ok ? "settled" : "settle_failed";
+    res.status(out.ok ? 200 : 502).json({ settled: out.ok, status: out.status, settle_receipt: out.settle, data: out.data });
+  } catch (e) {
+    res.status(502).json({ error: "settle_failed", message: String(e.message ?? e) });
+  }
 });
 
 app.post("/pay", async (req, res) => {
