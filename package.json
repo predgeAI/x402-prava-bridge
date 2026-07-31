@@ -1,0 +1,14 @@
+{
+  "name": "x402-prava-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Bridge: a card-carrying (Prava) agent pays any x402/USDC endpoint without a crypto wallet. Built for the PRAVA Agentic Commerce Hackathon (2026-07-31 → 08-02).",
+  "scripts": {
+    "health": "node -e \"import('./src/x402.mjs').then(m=>m.probeX402(process.env.U||'https://x402-api-production-266e.up.railway.app/v1/whales/latest').then(r=>console.log(JSON.stringify(r,null,2))))\"",
+    "server": "node src/server.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
