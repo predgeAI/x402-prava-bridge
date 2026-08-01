@@ -134,7 +134,12 @@ app.get("/collect/:sessionId", (req, res) => {
   const s = SESSIONS.get(req.params.sessionId);
   if (!s) return res.status(404).send("unknown or expired session — create one via POST /prava/session");
   const pk = process.env.PRAVA_PK_TEST ?? "";
+  // Delegate WebAuthn/passkey to the cross-origin Prava collect iframe — without
+  // this the browser blocks passkey creation inside the iframe ("Security Check
+  // Failed"). Allow the sandbox collect origin (and self) to use it.
+  res.set("Permissions-Policy", 'publickey-credentials-get=*, publickey-credentials-create=*, payment=*');
   res.type("html").send(`<!doctype html><html><head><meta charset="utf-8">
+<meta http-equiv="Permissions-Policy" content="publickey-credentials-get=*, publickey-credentials-create=*">
 <title>Prava card — x402-prava-bridge</title></head>
 <body style="font-family:system-ui,sans-serif;max-width:540px;margin:40px auto;padding:0 16px">
 <h3>Enter the sandbox Visa test card</h3>
