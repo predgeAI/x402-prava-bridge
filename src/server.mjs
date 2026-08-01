@@ -11,6 +11,8 @@
 // are separate authorized steps. This keeps the money path owner-controlled
 // while the whole decision + orchestration is real and demoable.
 import express from "express";
+import { readFileSync } from "node:fs";
+import { createServer as createHttpsServer } from "node:https";
 import { probeX402 } from "./x402.mjs";
 import { decidePolicy, auditEntry, DEFAULT_THRESHOLD_USD, BRIDGE_FEE_USD } from "./policy.mjs";
 import { settleX402, floatAddress } from "./settle.mjs";
@@ -22,6 +24,15 @@ app.use(express.json());
 
 const AUDIT = [];
 const SESSIONS = new Map(); // sessionId → { session_token, iframe_url } for the collect page
+
+// Passkey/WebAuthn needs HTTPS. We serve the agent-facing API on plain http (so the
+// Node demo-agent can call it without cert hassle) AND, when a cert is present, the
+// SAME app on https for the browser collect page (secure context → passkey works).
+const HTTPS_PORT = Number(process.env.HTTPS_PORT ?? 8443);
+let TLS = null;
+try { TLS = { key: readFileSync(process.env.TLS_KEY || "certs/localhost.key"), cert: readFileSync(process.env.TLS_CERT || "certs/localhost.crt") }; } catch { TLS = null; }
+const collectBase = (req) =>
+  process.env.PUBLIC_URL?.replace(/\/+$/, "") || (TLS ? `https://localhost:${HTTPS_PORT}` : `${req.protocol}://${req.get("host")}`);
 const log = (e) => { AUDIT.push(e); console.log("audit", JSON.stringify(e)); };
 
 app.get("/health", (_req, res) => {
@@ -120,10 +131,8 @@ app.post("/prava/session", async (req, res) => {
     // The bare Prava iframe_url is NOT standalone-openable — it must be mounted via
     // the Prava front-end SDK (collectPAN with the session_token). So we hand back a
     // LOCAL collect page that does exactly that.
-    // Passkey/WebAuthn needs a secure context (HTTPS) — set PUBLIC_URL to your
-    // https tunnel (ngrok/cloudflared) so the collect page is opened over HTTPS.
-    const base = process.env.PUBLIC_URL?.replace(/\/+$/, "") || `${req.protocol}://${req.get("host")}`;
-    const collect_url = `${base}/collect/${s.session_id}`;
+    // Passkey/WebAuthn needs HTTPS — collectBase serves the https listener (or PUBLIC_URL).
+    const collect_url = `${collectBase(req)}/collect/${s.session_id}`;
     res.json({ session_id: s.session_id, collect_url, expires_at: s.expires_at,
       next: "open collect_url in a browser, enter the sandbox Visa test card + passkey, then POST /prava/complete" });
   } catch (e) {
@@ -209,4 +218,11 @@ app.post("/prava/complete", async (req, res) => {
 app.get("/audit", (_req, res) => res.json({ count: AUDIT.length, entries: AUDIT }));
 
 const PORT = Number(process.env.PORT ?? 8899);
-app.listen(PORT, () => console.log(`x402-prava-bridge on :${PORT} (threshold $${DEFAULT_THRESHOLD_USD})`));
+app.listen(PORT, () =>
+  console.log(`x402-prava-bridge http://localhost:${PORT} (agent API; threshold $${DEFAULT_THRESHOLD_USD})`));
+if (TLS) {
+  createHttpsServer(TLS, app).listen(HTTPS_PORT, () =>
+    console.log(`  + https://localhost:${HTTPS_PORT} — open COLLECT pages here (passkey/WebAuthn works over HTTPS)`));
+} else {
+  console.log("  (no TLS cert at certs/localhost.{key,crt} — passkey needs HTTPS; generate a cert, see README)");
+}
