@@ -64,9 +64,9 @@ if (prava) {
   // REAL Prava sandbox card leg: create session → human approves in iframe → complete.
   const amt = plan.policy.totalUsd.toFixed(2);
   const sess = await post("/prava/session", { totalAmount: amt, description: `x402: ${kind}` });
-  console.log(`  💳 Prava session ${sess.session_id} — open & approve with the sandbox Visa test card:`);
+  console.log(`  💳 Prava session ${sess.session_id} — open this collect page and approve:`);
   console.log(`     card 4622 9431 2313 7789 · CVV 757 · exp 12/27 · bank-OTP 456789 · then passkey`);
-  console.log(`     ${sess.iframe_url}`);
+  console.log(`     ${sess.collect_url}`);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   await rl.question("     press Enter AFTER you approved in the iframe… ");
   rl.close();

@@ -51,7 +51,7 @@ export async function createSession({
 }
 
 /** Poll payment-result until awaiting_result/completed or timeout. */
-export async function pollResult(sessionId, { timeoutMs = 120000, intervalMs = 2500 } = {}) {
+export async function pollResult(sessionId, { timeoutMs = 300000, intervalMs = 3000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const r = await api("GET", `/v1/sessions/${sessionId}/payment-result`);
@@ -70,8 +70,9 @@ export async function reportStatus(sessionId, txnRefId, txnStatus = "APPROVED") 
   return api("POST", `/v1/sessions/${sessionId}/report-status`, { txn_ref_id: txnRefId, txn_status: txnStatus });
 }
 
-/** ping-ish: creates and returns a session for a small amount (no charge). */
+/** Create a session; returns id + token + iframe_url (token is needed by the
+ *  front-end SDK collectPAN mount — the bare iframe_url is NOT standalone-openable). */
 export async function cardLegSession(totalAmount, description) {
   const s = await createSession({ totalAmount, description });
-  return { session_id: s.session_id, iframe_url: s.iframe_url, expires_at: s.expires_at };
+  return { session_id: s.session_id, session_token: s.session_token, iframe_url: s.iframe_url, expires_at: s.expires_at };
 }

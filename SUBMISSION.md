@@ -80,6 +80,6 @@ Node/Express bridge · Prava sandbox REST (sessions + mandates) · `@x402/fetch`
 `@x402/evm` + viem for the USDC/Base leg · Predge as the live x402 seller.
 
 ## Links
-- Repo: `<predge-ai repo URL>`
+- Repo: https://github.com/predgeAI/x402-prava-bridge
 - Demo video: `<unlisted video URL>`
 - Live seller (pre-existing): https://data.predge.io/.well-known/x402

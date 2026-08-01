@@ -20,6 +20,7 @@ const app = express();
 app.use(express.json());
 
 const AUDIT = [];
+const SESSIONS = new Map(); // sessionId → { session_token, iframe_url } for the collect page
 const log = (e) => { AUDIT.push(e); console.log("audit", JSON.stringify(e)); };
 
 app.get("/health", (_req, res) => {
@@ -114,10 +115,49 @@ app.post("/prava/session", async (req, res) => {
   const description = String(req.body?.description ?? "x402 data purchase");
   try {
     const s = await cardLegSession(totalAmount, description);
-    res.json({ ...s, next: "open iframe_url, enter the sandbox Visa test card + passkey, then POST /prava/complete" });
+    SESSIONS.set(s.session_id, { session_token: s.session_token, iframe_url: s.iframe_url });
+    // The bare Prava iframe_url is NOT standalone-openable — it must be mounted via
+    // the Prava front-end SDK (collectPAN with the session_token). So we hand back a
+    // LOCAL collect page that does exactly that.
+    const collect_url = `${req.protocol}://${req.get("host")}/collect/${s.session_id}`;
+    res.json({ session_id: s.session_id, collect_url, expires_at: s.expires_at,
+      next: "open collect_url in a browser, enter the sandbox Visa test card + passkey, then POST /prava/complete" });
   } catch (e) {
     res.status(502).json({ error: "prava_session_failed", message: String(e.message ?? e) });
   }
+});
+
+// Local collect page: loads the Prava front-end SDK, initialises with the
+// publishable key, and mounts the card-collection iframe (collectPAN) with the
+// session token. Card data never touches this page — it's served from Prava's domain.
+app.get("/collect/:sessionId", (req, res) => {
+  const s = SESSIONS.get(req.params.sessionId);
+  if (!s) return res.status(404).send("unknown or expired session — create one via POST /prava/session");
+  const pk = process.env.PRAVA_PK_TEST ?? "";
+  res.type("html").send(`<!doctype html><html><head><meta charset="utf-8">
+<title>Prava card — x402-prava-bridge</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:540px;margin:40px auto;padding:0 16px">
+<h3>Enter the sandbox Visa test card</h3>
+<p>Card <b>4622 9431 2313 7789</b> · CVV <b>757</b> · exp <b>12/27</b> · bank-OTP <b>456789</b>,
+then approve with your passkey. Card data is served from Prava's domain — it never touches this page.</p>
+<div id="card-form"></div>
+<p id="status">loading Prava SDK…</p>
+<script type="module">
+  const set = (t) => { document.getElementById("status").textContent = t; };
+  try {
+    const { PravaSDK } = await import("https://esm.sh/@prava-sdk/core");
+    const prava = new PravaSDK({ publishableKey: ${JSON.stringify(pk)} });
+    await prava.collectPAN({
+      sessionToken: ${JSON.stringify(s.session_token)},
+      iframeUrl: ${JSON.stringify(s.iframe_url)},
+      container: "#card-form",
+      onSuccess: (d) => set("✓ card enrolled (" + (d.brand||"card") + " …" + (d.last4||"----") + ") — return to the terminal and press Enter"),
+      onError: (e) => set("✗ collect error: " + (e && e.message ? e.message : e)),
+    });
+    set("ready — enter the card above, then approve the passkey");
+  } catch (e) { set("✗ could not load Prava SDK: " + (e && e.message ? e.message : e) + " (see console)"); console.error(e); }
+</script>
+</body></html>`);
 });
 
 // Step 2: after the human approved, poll for the one-time credentials and report
