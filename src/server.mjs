@@ -17,6 +17,7 @@ import { settleX402, floatAddress } from "./settle.mjs";
 import { cardLegSession, pollResult, reportStatus } from "./prava.mjs";
 
 const app = express();
+app.set("trust proxy", true); // reflect x-forwarded-proto (https) when behind a tunnel
 app.use(express.json());
 
 const AUDIT = [];
@@ -119,7 +120,10 @@ app.post("/prava/session", async (req, res) => {
     // The bare Prava iframe_url is NOT standalone-openable — it must be mounted via
     // the Prava front-end SDK (collectPAN with the session_token). So we hand back a
     // LOCAL collect page that does exactly that.
-    const collect_url = `${req.protocol}://${req.get("host")}/collect/${s.session_id}`;
+    // Passkey/WebAuthn needs a secure context (HTTPS) — set PUBLIC_URL to your
+    // https tunnel (ngrok/cloudflared) so the collect page is opened over HTTPS.
+    const base = process.env.PUBLIC_URL?.replace(/\/+$/, "") || `${req.protocol}://${req.get("host")}`;
+    const collect_url = `${base}/collect/${s.session_id}`;
     res.json({ session_id: s.session_id, collect_url, expires_at: s.expires_at,
       next: "open collect_url in a browser, enter the sandbox Visa test card + passkey, then POST /prava/complete" });
   } catch (e) {
