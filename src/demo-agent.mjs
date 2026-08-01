@@ -55,6 +55,13 @@ const { url, kind } = routeFor(question);
 console.log(`\n❓ ${question}`);
 console.log(`🧭 needs Predge data → ${kind}\n`);
 
+// Preflight: fail cleanly if the bridge isn't running (instead of an undici stack trace).
+try { const h = await fetch(`${BRIDGE}/health`); if (!h.ok) throw new Error(`HTTP ${h.status}`); }
+catch {
+  console.error(`❌ bridge not reachable at ${BRIDGE}\n   start it first (separate terminal):  cd ~/Documents/Playground/x402-prava-bridge && npm run server`);
+  process.exit(1);
+}
+
 const plan = await post("/pay", { targetUrl: url });
 if (!plan.paid_required) { console.log("  (resource is free — no payment needed)"); process.exit(0); }
 console.log(`  🔎 402 → $${plan.x402_leg.price_usd} USDC on Base (payTo ${plan.x402_leg.pay_to.slice(0, 10)}…)`);
