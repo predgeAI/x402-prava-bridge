@@ -144,8 +144,20 @@ then approve with your passkey. Card data is served from Prava's domain — it n
 <p id="status">loading Prava SDK…</p>
 <script type="module">
   const set = (t) => { document.getElementById("status").textContent = t; };
+  async function loadPravaSDK() {
+    const urls = [
+      "https://cdn.jsdelivr.net/npm/@prava-sdk/core@0.1.2/+esm",
+      "https://esm.sh/@prava-sdk/core@0.1.2",
+    ];
+    let lastErr;
+    for (const u of urls) {
+      try { const m = await import(u); if (m && m.PravaSDK) return m.PravaSDK; lastErr = new Error("module has no PravaSDK export: " + u); }
+      catch (e) { lastErr = e; }
+    }
+    throw lastErr;
+  }
   try {
-    const { PravaSDK } = await import("https://esm.sh/@prava-sdk/core");
+    const PravaSDK = await loadPravaSDK();
     const prava = new PravaSDK({ publishableKey: ${JSON.stringify(pk)} });
     await prava.collectPAN({
       sessionToken: ${JSON.stringify(s.session_token)},
@@ -155,7 +167,7 @@ then approve with your passkey. Card data is served from Prava's domain — it n
       onError: (e) => set("✗ collect error: " + (e && e.message ? e.message : e)),
     });
     set("ready — enter the card above, then approve the passkey");
-  } catch (e) { set("✗ could not load Prava SDK: " + (e && e.message ? e.message : e) + " (see console)"); console.error(e); }
+  } catch (e) { set("✗ SDK/collect failed: " + (e && e.message ? e.message : String(e))); console.error("prava collect:", e); }
 </script>
 </body></html>`);
 });
