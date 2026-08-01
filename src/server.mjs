@@ -163,6 +163,16 @@ then approve with your passkey. Card data is served from Prava's domain — it n
   }
   try {
     const PravaSDK = await loadPravaSDK();
+    // Best-effort: as the SDK mounts its collect iframe, grant it WebAuthn/payment
+    // permissions so passkey creation isn't blocked in the cross-origin iframe.
+    const container = document.querySelector("#card-form");
+    new MutationObserver(() => {
+      const f = container && container.querySelector("iframe");
+      if (f && f.dataset.allowPatched !== "1") {
+        try { f.setAttribute("allow", "publickey-credentials-create *; publickey-credentials-get *; payment *"); } catch (_) {}
+        f.dataset.allowPatched = "1";
+      }
+    }).observe(container || document.body, { childList: true, subtree: true });
     const prava = new PravaSDK({ publishableKey: ${JSON.stringify(pk)} });
     await prava.collectPAN({
       sessionToken: ${JSON.stringify(s.session_token)},
