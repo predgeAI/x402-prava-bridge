@@ -42,7 +42,10 @@ export async function createSession({
     user_email: userEmail,
     total_amount: totalAmount, // "0.01" (2dp)
     currency: "USD",
-    integration_type: "embedding",
+    // Hosted mode: user is redirected to a Prava-hosted page (Prava's domain), so
+    // card entry + passkey/WebAuthn create happen SAME-ORIGIN and actually complete.
+    // Embedding put the passkey in a cross-origin iframe, which browsers block.
+    integration_type: process.env.PRAVA_INTEGRATION || "full_checkout",
     purchase_context: [{
       merchant_details: { name: merchantName, url: merchantUrl, country_code_iso2: country },
       product_details: [{ description, unit_price: totalAmount, quantity: 1 }],

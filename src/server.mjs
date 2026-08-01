@@ -128,13 +128,15 @@ app.post("/prava/session", async (req, res) => {
   try {
     const s = await cardLegSession(totalAmount, description);
     SESSIONS.set(s.session_id, { session_token: s.session_token, iframe_url: s.iframe_url });
-    // The bare Prava iframe_url is NOT standalone-openable — it must be mounted via
-    // the Prava front-end SDK (collectPAN with the session_token). So we hand back a
-    // LOCAL collect page that does exactly that.
-    // Passkey/WebAuthn needs HTTPS — collectBase serves the https listener (or PUBLIC_URL).
-    const collect_url = `${collectBase(req)}/collect/${s.session_id}`;
+    // Hosted (full_checkout) mode: hand back Prava's OWN hosted URL. The user opens it
+    // directly — card entry, OTP and passkey all run on Prava's domain (same-origin),
+    // so WebAuthn passkey CREATE actually completes. No local iframe/SDK/HTTPS needed.
+    // (The local /collect SDK page is kept for the embedding mode, but hosted bypasses it.)
+    const collect_url = process.env.PRAVA_INTEGRATION === "embedding"
+      ? `${collectBase(req)}/collect/${s.session_id}`
+      : s.iframe_url;
     res.json({ session_id: s.session_id, collect_url, expires_at: s.expires_at,
-      next: "open collect_url in a browser, enter the sandbox Visa test card + passkey, then POST /prava/complete" });
+      next: "open collect_url (Prava-hosted) — enter the sandbox Visa card + OTP + passkey there, then press Enter" });
   } catch (e) {
     res.status(502).json({ error: "prava_session_failed", message: String(e.message ?? e) });
   }
