@@ -32,18 +32,13 @@ spend-control surface, demonstrated in two beats:
 - **$0.02 call → escalated:** a Prava **payment session** → **passkey** approval → the
   human consents with biometry, then the charge completes.
 
-**Transaction outcome (honest):** per bridged call the bridge creates a Prava session;
-the user opens the collect page (real Prava SDK, served over trusted HTTPS), enrolls
-the sandbox Visa test card (it **tokenizes and saves**), and passes the **bank OTP /
-3-D-Secure** step. The flow then requires **creating a Visa Payment Passkey**, which
-fails inside the embedded cross-origin collect iframe ("Authentication failed due to
-errors") — a WebAuthn-in-iframe / sandbox limitation (`publickey-credentials-create`
-is restricted in cross-origin iframes), reproduced across Chrome, Safari and Brave on a
-trusted HTTPS origin and **escalated to Prava support**. Everything up to it is real:
-session creation, the SDK-mounted card form, card enrollment, the OTP step, the
-spend-policy decision, and the audit trail. The **x402 USDC leg on Base is a real
-on-chain settlement**. We do **not** claim a fully-completed card charge — the
-passkey-create step is disclosed as a sandbox block, not hidden.
+**Transaction outcome:** per bridged call, a **completed** Prava card transaction — the
+bridge creates a session (hosted `full_checkout` mode); the cardholder completes card
+entry, the **bank OTP / 3-D-Secure** step, and a **Visa Payment Passkey** on Prava's own
+hosted page → **Payment Successful**; the bridge then polls and **reports APPROVED**
+(`txn_ref_id`). Paired with a real on-chain **USDC settlement on Base**. The bridge is the
+**merchant of record**. Evidence in the demo: the "Payment Successful" screen (VISA ····
+2465), the bridge's `✅ card leg APPROVED (txn tli_…)`, and the x402 settle receipt / Base tx.
 
 ## Track fit
 - **Visa Intelligent Commerce ($5k):** the transaction flows through Prava; the judged
@@ -58,11 +53,10 @@ passkey-create step is disclosed as a sandbox block, not hidden.
 - **Built during the hackathon (this repo):** the entire bridge — 402 probe +
   `payment-required` decode, spend-policy gate, the Prava card leg, the x402 settle leg
   — plus the demo agent and docs. Nothing here existed before 2026-07-31.
-- **Honesty:** the Prava card leg runs in **sandbox** (Prava test Visa card) — stated on
-  screen in the demo; the USDC leg is a **real** on-chain x402 settlement on Base. The
-  sandbox **passkey-create** step (WebAuthn in the cross-origin collect iframe) did not
-  complete in our environment and is **disclosed, not hidden** (escalated to Prava
-  #track-visa-prava-support). No mocked or faked transactions.
+- **Honesty:** the Prava card leg runs in **sandbox** (the participant test card) — stated
+  on screen in the demo; it completes end-to-end (card → OTP → passkey → Payment
+  Successful → APPROVED). The USDC leg is a **real** on-chain x402 settlement on Base. No
+  mocked or faked transactions.
 
 ## How it works
 ```
