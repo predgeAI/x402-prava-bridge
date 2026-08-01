@@ -42,11 +42,18 @@ export function floatAddress() {
 export async function settleX402(targetUrl, { init } = {}) {
   const { pay, http } = client();
   const res = await pay(targetUrl, { method: "GET", ...init });
-  const raw = res.headers.get("payment-response") ?? res.headers.get("x-payment-response");
-  let settle = null;
-  if (raw) {
-    try { settle = JSON.parse(Buffer.from(raw, "base64").toString("utf8")); } catch { /* leave null */ }
+  // processResponse → { status, paymentStatus:"settled", body:<data>, header:<settle receipt> }
+  const processed = await http.processResponse(res);
+  let settle = processed?.header ?? null;
+  if (!settle) {
+    const raw = res.headers.get("payment-response") ?? res.headers.get("x-payment-response");
+    if (raw) { try { settle = JSON.parse(Buffer.from(raw, "base64").toString("utf8")); } catch { /* leave null */ } }
   }
-  const data = await http.processResponse(res);
-  return { ok: res.ok, status: res.status, settle, data };
+  return {
+    ok: res.ok && processed?.paymentStatus !== "failed",
+    status: processed?.status ?? res.status,
+    paymentStatus: processed?.paymentStatus ?? null,
+    settle,
+    data: processed?.body ?? null,
+  };
 }
