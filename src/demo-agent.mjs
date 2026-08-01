@@ -11,9 +11,11 @@
 const BRIDGE = process.env.BRIDGE_URL || "http://localhost:8899";
 const PREDGE = process.env.PREDGE_BASE || "https://x402-api-production-266e.up.railway.app";
 
+import { createInterface } from "node:readline/promises";
 const args = process.argv.slice(2);
 const settle = args.includes("--settle");
-const question = args.filter((a) => a !== "--settle").join(" ") ||
+const prava = args.includes("--prava"); // run the REAL Prava sandbox card leg (iframe + passkey)
+const question = args.filter((a) => !a.startsWith("--")).join(" ") ||
   "What's the newest whale trade on Polymarket right now?"; // no address → whales/latest (AUTO beat)
 
 // Decide which Predge endpoint answers the question (tiny router).
@@ -57,7 +59,24 @@ const plan = await post("/pay", { targetUrl: url });
 if (!plan.paid_required) { console.log("  (resource is free — no payment needed)"); process.exit(0); }
 console.log(`  🔎 402 → $${plan.x402_leg.price_usd} USDC on Base (payTo ${plan.x402_leg.pay_to.slice(0, 10)}…)`);
 console.log(`  🚦 policy: ${plan.policy.path.toUpperCase()} (${plan.policy.instrument})`);
-narrateCardLeg(plan.policy);
+
+if (prava) {
+  // REAL Prava sandbox card leg: create session → human approves in iframe → complete.
+  const amt = plan.policy.totalUsd.toFixed(2);
+  const sess = await post("/prava/session", { totalAmount: amt, description: `x402: ${kind}` });
+  console.log(`  💳 Prava session ${sess.session_id} — open & approve with the sandbox Visa test card:`);
+  console.log(`     card 4622 9431 2313 7789 · CVV 757 · exp 12/27 · bank-OTP 456789 · then passkey`);
+  console.log(`     ${sess.iframe_url}`);
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  await rl.question("     press Enter AFTER you approved in the iframe… ");
+  rl.close();
+  const done = await post("/prava/complete", { session_id: sess.session_id });
+  console.log(done.ok
+    ? `  ✅ card leg APPROVED (txn ${done.txn_ref_id}, card …${done.card_last4 ?? "----"})`
+    : `  ❌ card leg failed: ${done.message ?? done.error}`);
+} else {
+  narrateCardLeg(plan.policy);
+}
 
 let data = null;
 if (settle) {

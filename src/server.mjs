@@ -14,6 +14,7 @@ import express from "express";
 import { probeX402 } from "./x402.mjs";
 import { decidePolicy, auditEntry, DEFAULT_THRESHOLD_USD, BRIDGE_FEE_USD } from "./policy.mjs";
 import { settleX402, floatAddress } from "./settle.mjs";
+import { cardLegSession, pollResult, reportStatus } from "./prava.mjs";
 
 const app = express();
 app.use(express.json());
@@ -30,6 +31,7 @@ app.get("/health", (_req, res) => {
     threshold_usd: DEFAULT_THRESHOLD_USD,
     bridge_fee_usd: BRIDGE_FEE_USD,
     float_wallet: float,
+    prava_sandbox: Boolean(process.env.PRAVA_SK_TEST),
     bridged_calls: AUDIT.length,
   });
 });
@@ -102,6 +104,35 @@ app.post("/pay", async (req, res) => {
   };
   log(auditEntry({ url: targetUrl, base: probe.base, policy, outcome: "planned" }));
   res.json(plan);
+});
+
+// --- Prava card leg (sandbox) -------------------------------------------------
+// Step 1: create a session; the human opens iframe_url, enters the test Visa
+// card + passkey. No charge happens here.
+app.post("/prava/session", async (req, res) => {
+  const totalAmount = String(req.body?.totalAmount ?? "0.01");
+  const description = String(req.body?.description ?? "x402 data purchase");
+  try {
+    const s = await cardLegSession(totalAmount, description);
+    res.json({ ...s, next: "open iframe_url, enter the sandbox Visa test card + passkey, then POST /prava/complete" });
+  } catch (e) {
+    res.status(502).json({ error: "prava_session_failed", message: String(e.message ?? e) });
+  }
+});
+
+// Step 2: after the human approved, poll for the one-time credentials and report
+// the merchant outcome. Returns masked result only (never the raw card token/CVV).
+app.post("/prava/complete", async (req, res) => {
+  const sessionId = req.body?.session_id;
+  if (!sessionId) return res.status(400).json({ error: "session_id required" });
+  try {
+    const r = await pollResult(sessionId);
+    if (!r.txn_ref_id) return res.status(502).json({ error: "no_txn_ref", status: r.status });
+    const report = await reportStatus(sessionId, r.txn_ref_id, "APPROVED");
+    res.json({ ok: true, status: r.status, txn_ref_id: r.txn_ref_id, card_last4: r.card_last4, reported: report?.status ?? "APPROVED" });
+  } catch (e) {
+    res.status(502).json({ error: "prava_complete_failed", message: String(e.message ?? e) });
+  }
 });
 
 app.get("/audit", (_req, res) => res.json({ count: AUDIT.length, entries: AUDIT }));
