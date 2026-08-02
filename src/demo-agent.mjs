@@ -12,6 +12,7 @@ const BRIDGE = process.env.BRIDGE_URL || "http://localhost:8899";
 const PREDGE = process.env.PREDGE_BASE || "https://x402-api-production-266e.up.railway.app";
 
 import { createInterface } from "node:readline/promises";
+import { brainEnabled, routeWithLLM, explainWithLLM, MODEL } from "./brain.mjs";
 const args = process.argv.slice(2);
 const settle = args.includes("--settle");
 const prava = args.includes("--prava"); // run the REAL Prava sandbox card leg (iframe + passkey)
@@ -51,9 +52,26 @@ function answer(kind, data) {
     : "  🤖 Answer: no whale trades in the window.";
 }
 
-const { url, kind } = routeFor(question);
 console.log(`\n❓ ${question}`);
-console.log(`🧭 needs Predge data → ${kind}\n`);
+// The agent PLANS with OpenAI: which paid endpoint answers this, and which wallet?
+let route;
+if (brainEnabled()) {
+  try {
+    const r = await routeWithLLM(question);
+    route = r.endpoint === "wallet-history" && r.wallet
+      ? { url: `${PREDGE}/v1/wallets/${r.wallet.toLowerCase()}/history`, kind: "wallet-history" }
+      : { url: `${PREDGE}/v1/whales/latest?limit=5`, kind: "whales-latest" };
+    console.log(`🧠 OpenAI (${MODEL}) planned → ${route.kind}: ${r.rationale}`);
+  } catch (e) {
+    route = routeFor(question);
+    console.log(`🧭 (OpenAI unavailable: ${e.message}) → ${route.kind}`);
+  }
+} else {
+  route = routeFor(question);
+  console.log(`🧭 needs Predge data → ${route.kind}  (set OPENAI_API_KEY to plan with OpenAI)`);
+}
+const { url, kind } = route;
+console.log("");
 
 // Preflight: fail cleanly if the bridge isn't running (instead of an undici stack trace).
 try { const h = await fetch(`${BRIDGE}/health`); if (!h.ok) throw new Error(`HTTP ${h.status}`); }
@@ -92,4 +110,15 @@ if (settle) {
   if (s.settled) { console.log(`  ✅ settled (tx receipt present=${!!s.settle_receipt})`); data = s.data; }
   else console.log(`  ❌ settle failed: ${s.message ?? s.status}`);
 }
-console.log(answer(kind, data));
+// The agent ANSWERS with OpenAI over the data it just paid for (fallback: templated).
+if (brainEnabled() && data) {
+  try {
+    const said = await explainWithLLM(question, data);
+    console.log(`  🤖 ${said}`);
+  } catch (e) {
+    console.log(`  (OpenAI answer unavailable: ${e.message})`);
+    console.log(answer(kind, data));
+  }
+} else {
+  console.log(answer(kind, data));
+}

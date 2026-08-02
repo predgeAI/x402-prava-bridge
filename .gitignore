@@ -4,3 +4,7 @@ node_modules/
 !.env.example
 *.log
 certs/
+
+# local demo artifacts
+demo-shots/
+*.mp4

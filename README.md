@@ -47,6 +47,16 @@ card-only agent ──POST /pay {targetUrl}──▶ x402-prava-bridge
 - **Prava Overall ($10k credits)** — Prava is the core enabler: without it a card-only
   agent simply cannot buy from a wallet-only x402 seller. It unlocks a *new action*, not
   a checkout button.
+- **OpenAI ($9k)** — the agent's brain is an OpenAI model (`src/brain.mjs`): it *plans*
+  which paid endpoint answers a natural-language question (structured-output tool call)
+  and *explains* the data it bought, honouring the `outcome_verified` trust flag. The LLM
+  drives the buying decision — it is not a hardcoded router.
+- **Localhost — Most Startup-Ready Product ($5k)** — Predge is a live, revenue-ready x402
+  API; the bridge widens its buyer market from "agents holding USDC" to "any agent with a
+  card", which is the whole go-to-market unlock.
+- **Senso — Agent Commerce Discovery & Trust ($7.5k)** — the bridge discovers pricing from
+  the `.well-known/x402` + `payment-required` header, and every answer carries a
+  machine-readable `outcome_verified` trust flag (win rate verified, PnL modelled).
 
 ## Sub-cent nuance (honest)
 
@@ -66,6 +76,24 @@ curl -sS -X POST localhost:8899/pay -H 'content-type: application/json' \
 
 `/pay` returns a **payment plan** (x402 leg + Prava leg params + policy decision) and
 moves no money on its own. Executing the two legs are separate authorized steps.
+
+## Agent brain (OpenAI)
+
+The demo agent thinks with an OpenAI model (`src/brain.mjs`, default `gpt-4o-mini`):
+
+- **Plan** — given a natural-language question, a structured-output call decides which
+  paid Predge endpoint to buy (`whales-latest` vs a specific `wallet-history`) and
+  extracts any wallet address. The LLM chooses what to buy.
+- **Answer** — after the bridge settles and returns the paid JSON, the model writes the
+  reply, keeping the `outcome_verified` distinction (win rate real, PnL modelled).
+
+Set `OPENAI_API_KEY` to enable it; without a key the agent falls back to a regex router so
+the demo still runs offline.
+
+```bash
+node --env-file=.env src/demo-agent.mjs --prava --settle "is wallet 0x8dab… smart money?"
+# 🧠 OpenAI (gpt-4o-mini) planned → wallet-history: the user named a wallet, check its record
+```
 
 ## Environments — sandbox vs production (IMPORTANT)
 
@@ -91,5 +119,6 @@ network could not process"). Sandbox:
    (used only by the x402 settle step; keep it out of git).
 3. **Devfolio:** add the project to the accepted entry; note the Prava MCP connection.
 
-Env: `PRAVA_SK_TEST`, `PRAVA_PK_TEST`, `FLOAT_PRIVATE_KEY`, `BRIDGE_AUTO_THRESHOLD_USDC`
-(default 0.01), `BRIDGE_FEE_USDC` (default 0), `PORT`.
+Env: `PRAVA_SK_TEST`, `PRAVA_PK_TEST`, `FLOAT_PRIVATE_KEY`, `OPENAI_API_KEY`,
+`OPENAI_MODEL` (default `gpt-4o-mini`), `BRIDGE_AUTO_THRESHOLD_USDC` (default 0.01),
+`BRIDGE_FEE_USDC` (default 0), `PORT`. See `.env.example`.
