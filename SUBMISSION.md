@@ -78,8 +78,9 @@ node --env-file=.env src/demo-agent.mjs --prava "profile wallet 0x8dab…"   # p
 ```
 
 ## Tech
-Node/Express bridge · **OpenAI** (`gpt-4o-mini`) as the agent brain — plans which paid
-endpoint to buy and writes the answer · Prava sandbox REST (sessions + mandates) ·
+Node/Express bridge · **OpenAI** (`gpt-4o-mini`) as the agent brain — **tool calling** to
+decide which paid endpoint to buy, a trust audit of the data, and the final answer ·
+Prava sandbox REST (sessions + mandates) ·
 `@x402/fetch` + `@x402/evm` + viem for the USDC/Base leg · Predge as the live x402 seller.
 
 ## Links

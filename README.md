@@ -79,20 +79,28 @@ moves no money on its own. Executing the two legs are separate authorized steps.
 
 ## Agent brain (OpenAI)
 
-The demo agent thinks with an OpenAI model (`src/brain.mjs`, default `gpt-4o-mini`):
+The demo agent thinks with an OpenAI model (`src/brain.mjs`, default `gpt-4o-mini`) at
+three points — all standard OpenAI patterns:
 
-- **Plan** — given a natural-language question, a structured-output call decides which
-  paid Predge endpoint to buy (`whales-latest` vs a specific `wallet-history`) and
-  extracts any wallet address. The LLM chooses what to buy.
-- **Answer** — after the bridge settles and returns the paid JSON, the model writes the
-  reply, keeping the `outcome_verified` distinction (win rate real, PnL modelled).
+- **Plan (tool calling)** — the model is given two *buy* tools, `buy_whales_latest` and
+  `buy_wallet_history({wallet})`, with `tool_choice: "required"`. Its tool call **is** the
+  agent's purchase decision — which paid Predge endpoint to spend on, and which wallet.
+  The LLM drives the action; we just execute the tool it picked.
+- **Trust audit** — `assessTrust()` reads the purchased data's `outcome_verified` flag and
+  states in one line what the agent may act on (verified win rate) vs. discount (modelled PnL).
+- **Answer** — the model writes the final reply over the data the agent just bought.
 
 Set `OPENAI_API_KEY` to enable it; without a key the agent falls back to a regex router so
 the demo still runs offline.
 
 ```bash
+npm run eval:brain          # runs sample questions through the tool-calling planner
+# ✓ ❓ is wallet 0x8dab… smart money?
+#    → wallet-history (0x8dab…) — evaluate this wallet's track record
+
 node --env-file=.env src/demo-agent.mjs --prava --settle "is wallet 0x8dab… smart money?"
-# 🧠 OpenAI (gpt-4o-mini) planned → wallet-history: the user named a wallet, check its record
+# 🧠 OpenAI (gpt-4o-mini) called tool → wallet-history: …
+# 🔐 trust (OpenAI): act on the verified win rate; treat PnL as a modelled estimate
 ```
 
 ## Environments — sandbox vs production (IMPORTANT)

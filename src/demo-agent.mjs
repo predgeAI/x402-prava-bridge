@@ -12,7 +12,7 @@ const BRIDGE = process.env.BRIDGE_URL || "http://localhost:8899";
 const PREDGE = process.env.PREDGE_BASE || "https://x402-api-production-266e.up.railway.app";
 
 import { createInterface } from "node:readline/promises";
-import { brainEnabled, routeWithLLM, explainWithLLM, MODEL } from "./brain.mjs";
+import { brainEnabled, planWithTools, assessTrust, explainWithLLM, MODEL } from "./brain.mjs";
 const args = process.argv.slice(2);
 const settle = args.includes("--settle");
 const prava = args.includes("--prava"); // run the REAL Prava sandbox card leg (iframe + passkey)
@@ -57,11 +57,11 @@ console.log(`\n❓ ${question}`);
 let route;
 if (brainEnabled()) {
   try {
-    const r = await routeWithLLM(question);
+    const r = await planWithTools(question); // OpenAI tool-calling picks what to buy
     route = r.endpoint === "wallet-history" && r.wallet
       ? { url: `${PREDGE}/v1/wallets/${r.wallet.toLowerCase()}/history`, kind: "wallet-history" }
       : { url: `${PREDGE}/v1/whales/latest?limit=5`, kind: "whales-latest" };
-    console.log(`🧠 OpenAI (${MODEL}) planned → ${route.kind}: ${r.rationale}`);
+    console.log(`🧠 OpenAI (${MODEL}) called tool → ${route.kind}: ${r.rationale}`);
   } catch (e) {
     route = routeFor(question);
     console.log(`🧭 (OpenAI unavailable: ${e.message}) → ${route.kind}`);
@@ -113,8 +113,9 @@ if (settle) {
 // The agent ANSWERS with OpenAI over the data it just paid for (fallback: templated).
 if (brainEnabled() && data) {
   try {
-    const said = await explainWithLLM(question, data);
+    const [said, trust] = await Promise.all([explainWithLLM(question, data), assessTrust(data)]);
     console.log(`  🤖 ${said}`);
+    if (trust) console.log(`  🔐 trust (OpenAI): ${trust}`);
   } catch (e) {
     console.log(`  (OpenAI answer unavailable: ${e.message})`);
     console.log(answer(kind, data));

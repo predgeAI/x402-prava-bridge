@@ -1,12 +1,19 @@
-// The agent's brain — OpenAI. Two real uses:
-//  1. routeWithLLM: read the user's natural-language question, decide WHICH paid
-//     Predge endpoint answers it, and extract a wallet address if present.
-//  2. explainWithLLM: turn the paid JSON the agent bought into a concise answer,
-//     honouring the outcome_verified trust flag (win rate real, PnL modelled).
+// The agent's brain — OpenAI. Three real uses, all standard OpenAI patterns:
 //
-// Enabled when OPENAI_API_KEY is set (the hackathon gives $100 of OpenAI credit).
-// Everything degrades gracefully to a regex router if the key is absent, so the
-// demo still runs offline.
+//   1. planWithTools()  — OpenAI **function/tool calling**: the model is given two
+//      "buy" tools (buy_whales_latest, buy_wallet_history) and must call exactly one.
+//      Its tool choice IS the agent's purchase decision — which paid Predge x402
+//      endpoint to spend money on, and which wallet. This is the canonical agentic
+//      pattern: the LLM drives the action, we just execute the tool it picked.
+//   2. assessTrust()    — the model audits the purchased data's trust: given the
+//      outcome_verified flag it states, in one line, what the agent may act on
+//      (verified win rate) vs. must discount (modelled PnL).
+//   3. explainWithLLM() — the model writes the final natural-language answer over the
+//      data the agent just bought.
+//
+// Model: OPENAI_MODEL (default gpt-4o-mini). Enabled when OPENAI_API_KEY is set (the
+// hackathon grants $100 of OpenAI credit). Everything degrades to a regex router when
+// the key is absent, so the demo still runs offline.
 import OpenAI from "openai";
 
 export const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -17,8 +24,73 @@ function client() {
 }
 export function brainEnabled() { return !!client(); }
 
-/** LLM planner → { endpoint, wallet, rationale } (or null if OpenAI is off). */
-export async function routeWithLLM(question) {
+// The two things a card-carrying agent can BUY from Predge, expressed as OpenAI tools.
+const BUY_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "buy_whales_latest",
+      description:
+        "Buy the newest large 'whale' trades across Polymarket. Use for general questions " +
+        "about recent / biggest / latest smart-money activity when NO specific wallet is named.",
+      parameters: {
+        type: "object", additionalProperties: false,
+        properties: { reason: { type: "string", description: "one short sentence on why this endpoint" } },
+        required: ["reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "buy_wallet_history",
+      description:
+        "Buy ONE specific wallet's trading track record. Use when the user names or asks about " +
+        "a specific 0x wallet address (e.g. 'is 0x… smart money?').",
+      parameters: {
+        type: "object", additionalProperties: false,
+        properties: {
+          wallet: { type: "string", description: "the 0x wallet address the user referenced" },
+          reason: { type: "string", description: "one short sentence on why this endpoint" },
+        },
+        required: ["wallet", "reason"],
+      },
+    },
+  },
+];
+
+/**
+ * OpenAI tool-calling planner. The model MUST call one buy tool; its choice is the
+ * agent's purchase decision. Returns { endpoint, wallet, rationale } or null (OpenAI off).
+ */
+export async function planWithTools(question) {
+  const c = client();
+  if (!c) return null;
+  const r = await c.chat.completions.create({
+    model: MODEL,
+    temperature: 0,
+    tools: BUY_TOOLS,
+    tool_choice: "required", // force a purchase decision — no chit-chat
+    messages: [
+      { role: "system", content:
+        "You are the buying planner for a card-carrying AI agent that purchases Polymarket " +
+        "whale-trading intelligence from the Predge x402 API. Call EXACTLY ONE tool to buy the " +
+        "data that answers the user's question." },
+      { role: "user", content: question },
+    ],
+  });
+  const call = r.choices?.[0]?.message?.tool_calls?.[0];
+  if (!call) return null;
+  const args = JSON.parse(call.function.arguments || "{}");
+  return {
+    endpoint: call.function.name === "buy_wallet_history" ? "wallet-history" : "whales-latest",
+    wallet: args.wallet ?? null,
+    rationale: args.reason ?? call.function.name,
+  };
+}
+
+/** One-line trust audit over the purchased data (or null if OpenAI is off). */
+export async function assessTrust(data) {
   const c = client();
   if (!c) return null;
   const r = await c.chat.completions.create({
@@ -26,33 +98,16 @@ export async function routeWithLLM(question) {
     temperature: 0,
     messages: [
       { role: "system", content:
-        "You are the planner for a card-carrying AI agent that buys Polymarket whale-trading " +
-        "intelligence from the Predge x402 API. Two endpoints are available: " +
-        "'whales-latest' (the newest large trades across the market) and 'wallet-history' " +
-        "(the track record of one specific wallet). Pick the endpoint that answers the user's " +
-        "question and extract a 0x wallet address if the user named one." },
-      { role: "user", content: question },
+        "You audit the trustworthiness of purchased market data. In ONE short line, state what an " +
+        "agent may safely act on versus must discount, based on the `outcome_verified` flag " +
+        "(verified = win rate resolved on-chain; modelled = a PnL estimate)." },
+      { role: "user", content: JSON.stringify(data).slice(0, 1500) },
     ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "route", strict: true,
-        schema: {
-          type: "object", additionalProperties: false,
-          properties: {
-            endpoint: { type: "string", enum: ["whales-latest", "wallet-history"] },
-            wallet: { type: ["string", "null"], description: "0x-address or null" },
-            rationale: { type: "string", description: "one short sentence" },
-          },
-          required: ["endpoint", "wallet", "rationale"],
-        },
-      },
-    },
   });
-  return JSON.parse(r.choices[0].message.content);
+  return r.choices[0].message.content.trim();
 }
 
-/** LLM answer over the paid data → string (or null if OpenAI is off). */
+/** Final natural-language answer over the purchased data (or null if OpenAI is off). */
 export async function explainWithLLM(question, data) {
   const c = client();
   if (!c) return null;
@@ -62,8 +117,7 @@ export async function explainWithLLM(question, data) {
     messages: [
       { role: "system", content:
         "You are the agent answering the user using ONLY the paid Predge data provided. " +
-        "Two sentences max. If the data carries outcome_verified, make clear the win rate is " +
-        "independently verified while PnL is modelled — so you act on the win rate." },
+        "Two sentences max, concrete and specific." },
       { role: "user", content: `Question: ${question}\nPaid data (JSON): ${JSON.stringify(data).slice(0, 2000)}` },
     ],
   });
